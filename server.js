@@ -5,10 +5,14 @@ const fs = require('fs');
 const OAuthClient = require('intuit-oauth');
 const QuickBooks = require('node-quickbooks');
 const multer = require('multer');
+const { clerkMiddleware, requireAuth, getAuth } = require('@clerk/express');
+const { PrismaClient } = require('@prisma/client');
 
+const prisma = new PrismaClient();
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(clerkMiddleware());
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -18,8 +22,6 @@ if (fs.existsSync(CLIENT_DIST)) {
 }
 app.use(express.static(path.join(__dirname, 'public')));
 
-const TOKENS_FILE = path.join(__dirname, 'tokens.json');
-
 const oauthClient = new OAuthClient({
   clientId: process.env.QB_CLIENT_ID,
   clientSecret: process.env.QB_CLIENT_SECRET,
@@ -27,57 +29,59 @@ const oauthClient = new OAuthClient({
   redirectUri: process.env.QB_REDIRECT_URI,
 });
 
-function saveTokens(tokenData) {
-  fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokenData, null, 2));
+async function ensureUser(userId) {
+  await prisma.user.upsert({
+    where: { id: userId },
+    update: {},
+    create: { id: userId },
+  });
 }
 
-function loadTokens() {
-  if (!fs.existsSync(TOKENS_FILE)) return null;
-  return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
+async function getConnection(userId) {
+  return prisma.qboConnection.findUnique({ where: { userId } });
 }
 
-async function refreshIfNeeded() {
-  const tokens = loadTokens();
-  if (!tokens) return null;
-  if (Date.now() < tokens.expires_at - 60000) return tokens;
+async function refreshIfNeeded(conn) {
+  if (!conn) return null;
+  if (Date.now() < conn.expiresAt.getTime() - 60000) return conn;
   try {
     oauthClient.setToken({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      access_token: conn.accessToken,
+      refresh_token: conn.refreshToken,
       token_type: 'bearer',
       expires_in: 3600,
       x_refresh_token_expires_in: 8726400,
     });
     const result = await oauthClient.refresh();
     const refreshed = result.getJson();
-    const updated = {
-      access_token: refreshed.access_token,
-      refresh_token: refreshed.refresh_token,
-      realmId: tokens.realmId,
-      expires_at: Date.now() + refreshed.expires_in * 1000,
-    };
-    saveTokens(updated);
-    return updated;
+    return prisma.qboConnection.update({
+      where: { userId: conn.userId },
+      data: {
+        accessToken: refreshed.access_token,
+        refreshToken: refreshed.refresh_token,
+        expiresAt: new Date(Date.now() + refreshed.expires_in * 1000),
+      },
+    });
   } catch (err) {
     console.error('Token refresh failed:', err.message);
-    return tokens;
+    return conn;
   }
 }
 
-async function getQbo() {
-  const tokens = await refreshIfNeeded();
-  if (!tokens) throw new Error('Not connected to QuickBooks. Visit /connect first.');
+async function getQbo(userId) {
+  const conn = await refreshIfNeeded(await getConnection(userId));
+  if (!conn) throw new Error('Not connected to QuickBooks. Visit /connect first.');
   return new QuickBooks(
     process.env.QB_CLIENT_ID,
     process.env.QB_CLIENT_SECRET,
-    tokens.access_token,
+    conn.accessToken,
     false,
-    tokens.realmId,
+    conn.realmId,
     process.env.QB_ENVIRONMENT === 'sandbox',
     false,
     null,
     '2.0',
-    tokens.refresh_token
+    conn.refreshToken
   );
 }
 
@@ -91,24 +95,39 @@ function cb(res) {
   };
 }
 
-app.get('/connect', (req, res) => {
+app.get('/connect', requireAuth(), async (req, res) => {
+  const { userId } = getAuth(req);
+  await ensureUser(userId);
   const authUri = oauthClient.authorizeUri({
     scope: [OAuthClient.scopes.Accounting],
-    state: 'init',
+    state: userId,
   });
   res.redirect(authUri);
 });
 
 app.get('/callback', async (req, res) => {
   try {
+    const userId = req.query.state;
+    if (!userId) return res.status(400).send('Missing state param');
     const authResponse = await oauthClient.createToken(req.url);
     const token = authResponse.getJson();
     const realmId = req.query.realmId;
-    saveTokens({
-      access_token: token.access_token,
-      refresh_token: token.refresh_token,
-      realmId: realmId,
-      expires_at: Date.now() + token.expires_in * 1000,
+    await ensureUser(userId);
+    await prisma.qboConnection.upsert({
+      where: { userId },
+      update: {
+        realmId,
+        accessToken: token.access_token,
+        refreshToken: token.refresh_token,
+        expiresAt: new Date(Date.now() + token.expires_in * 1000),
+      },
+      create: {
+        userId,
+        realmId,
+        accessToken: token.access_token,
+        refreshToken: token.refresh_token,
+        expiresAt: new Date(Date.now() + token.expires_in * 1000),
+      },
     });
     res.redirect('/');
   } catch (err) {
@@ -117,67 +136,51 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-const SYNC_FILE = path.join(__dirname, 'last-sync.json');
-function loadSyncMeta() {
-  if (!fs.existsSync(SYNC_FILE)) return null;
-  try { return JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')); } catch { return null; }
-}
-function saveSyncMeta(meta) {
-  fs.writeFileSync(SYNC_FILE, JSON.stringify(meta, null, 2));
-}
-function queryCount(qbo, method, responseKey) {
-  return new Promise((resolve, reject) => {
-    qbo[method]({ limit: 1000 }, (err, data) => {
-      if (err) return reject(err);
-      resolve((data?.QueryResponse?.[responseKey] || []).length);
-    });
-  });
-}
+const api = express.Router();
+api.use(requireAuth());
+api.use((req, res, next) => {
+  req.userId = getAuth(req).userId;
+  next();
+});
 
-app.post('/api/disconnect', (req, res) => {
-  if (fs.existsSync(TOKENS_FILE)) fs.unlinkSync(TOKENS_FILE);
-  if (fs.existsSync(SYNC_FILE)) fs.unlinkSync(SYNC_FILE);
+api.post('/disconnect', async (req, res) => {
+  await prisma.qboConnection.deleteMany({ where: { userId: req.userId } });
   res.json({ success: true });
 });
 
-app.get('/api/status', (req, res) => {
-  const tokens = loadTokens();
-  const syncMeta = loadSyncMeta();
-  res.json({ connected: !!tokens, realmId: tokens?.realmId || null, lastSync: syncMeta });
+api.get('/connect-url', async (req, res) => {
+  await ensureUser(req.userId);
+  const authUri = oauthClient.authorizeUri({
+    scope: [OAuthClient.scopes.Accounting],
+    state: req.userId,
+  });
+  res.json({ url: authUri });
 });
 
-app.post('/api/sync', async (req, res) => {
+api.get('/status', async (req, res) => {
+  const conn = await getConnection(req.userId);
+  res.json({ connected: !!conn, realmId: conn?.realmId || null, lastSync: null });
+});
+
+api.post('/sync', async (req, res) => {
   try {
-    const qbo = await getQbo();
-    const [customers, items, invoices, estimates, payments] = await Promise.all([
-      queryCount(qbo, 'findCustomers', 'Customer'),
-      queryCount(qbo, 'findItems', 'Item'),
-      queryCount(qbo, 'findInvoices', 'Invoice'),
-      queryCount(qbo, 'findEstimates', 'Estimate'),
-      queryCount(qbo, 'findPayments', 'Payment'),
-    ]);
-    const meta = {
-      syncedAt: new Date().toISOString(),
-      counts: { customers, items, invoices, estimates, payments },
-    };
-    saveSyncMeta(meta);
-    res.json(meta);
+    await getQbo(req.userId);
+    res.json({ syncedAt: new Date().toISOString(), counts: {} });
   } catch (err) {
-    console.error('Sync error:', err);
-    res.status(500).json({ error: err.fault?.error?.[0]?.Message || err.message || String(err) });
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/company', async (req, res) => {
+api.get('/company', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getCompanyInfo(qbo.realmId, cb(res));
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/customers', async (req, res) => {
+api.get('/customers', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findCustomers({ limit: 1000 }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Customer || []);
@@ -185,16 +188,16 @@ app.get('/api/customers', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/customers', async (req, res) => {
+api.post('/customers', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.createCustomer(req.body, cb(res));
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.put('/api/customers/:id', async (req, res) => {
+api.put('/customers/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getCustomer(req.params.id, (err, existing) => {
       if (err) return cb(res)(err);
       const updated = { ...existing, ...req.body, Id: existing.Id, SyncToken: existing.SyncToken };
@@ -203,9 +206,9 @@ app.put('/api/customers/:id', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.delete('/api/customers/:id', async (req, res) => {
+api.delete('/customers/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getCustomer(req.params.id, (err, existing) => {
       if (err) return cb(res)(err);
       existing.Active = false;
@@ -214,9 +217,9 @@ app.delete('/api/customers/:id', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/items', async (req, res) => {
+api.get('/items', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findItems({ limit: 1000 }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Item || []);
@@ -224,16 +227,16 @@ app.get('/api/items', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/items', async (req, res) => {
+api.post('/items', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.createItem(req.body, cb(res));
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.put('/api/items/:id', async (req, res) => {
+api.put('/items/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getItem(req.params.id, (err, existing) => {
       if (err) return cb(res)(err);
       const updated = { ...existing, ...req.body, Id: existing.Id, SyncToken: existing.SyncToken };
@@ -242,9 +245,9 @@ app.put('/api/items/:id', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/invoices', async (req, res) => {
+api.get('/invoices', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findInvoices({ limit: 1000, desc: 'MetaData.CreateTime' }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Invoice || []);
@@ -252,16 +255,16 @@ app.get('/api/invoices', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/invoices/:id', async (req, res) => {
+api.get('/invoices/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getInvoice(req.params.id, cb(res));
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/invoices', async (req, res) => {
+api.post('/invoices', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     const { customerId, lines, dueDate, memo } = req.body;
 
     qbo.findItems({ limit: 1 }, (itemErr, itemData) => {
@@ -293,9 +296,9 @@ app.post('/api/invoices', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.delete('/api/invoices/:id', async (req, res) => {
+api.delete('/invoices/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getInvoice(req.params.id, (err, existing) => {
       if (err) return cb(res)(err);
       qbo.deleteInvoice(existing, cb(res));
@@ -303,17 +306,17 @@ app.delete('/api/invoices/:id', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/invoices/:id/send', async (req, res) => {
+api.post('/invoices/:id/send', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     const email = req.body.email;
     qbo.sendInvoicePdf(req.params.id, email, cb(res));
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/invoices/:id/pdf', async (req, res) => {
+api.get('/invoices/:id/pdf', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getInvoicePdf(req.params.id, (err, pdf) => {
       if (err) return res.status(500).json({ error: err });
       res.setHeader('Content-Type', 'application/pdf');
@@ -323,9 +326,9 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/estimates', async (req, res) => {
+api.get('/estimates', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findEstimates({ limit: 1000, desc: 'MetaData.CreateTime' }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Estimate || []);
@@ -333,9 +336,9 @@ app.get('/api/estimates', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/estimates', async (req, res) => {
+api.post('/estimates', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     const { customerId, lines, memo } = req.body;
     qbo.findItems({ limit: 1 }, (itemErr, itemData) => {
       const fallbackItemId = itemData?.QueryResponse?.Item?.[0]?.Id || '1';
@@ -362,9 +365,9 @@ app.post('/api/estimates', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.put('/api/estimates/:id', async (req, res) => {
+api.put('/estimates/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getEstimate(req.params.id, (err, existing) => {
       if (err) return cb(res)(err);
       const { customerId, lines, memo } = req.body;
@@ -397,9 +400,9 @@ app.put('/api/estimates/:id', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/payments', async (req, res) => {
+api.get('/payments', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findPayments({ limit: 1000, desc: 'MetaData.CreateTime' }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Payment || []);
@@ -407,9 +410,9 @@ app.get('/api/payments', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/payments', async (req, res) => {
+api.post('/payments', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     const { customerId, amount, invoiceId } = req.body;
     const payment = {
       CustomerRef: { value: customerId },
@@ -423,9 +426,9 @@ app.post('/api/payments', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.put('/api/payments/:id', async (req, res) => {
+api.put('/payments/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getPayment(req.params.id, (err, existing) => {
       if (err) return cb(res)(err);
       const { customerId, amount, invoiceId } = req.body;
@@ -445,9 +448,9 @@ app.put('/api/payments/:id', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/vendors', async (req, res) => {
+api.get('/vendors', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findVendors({ limit: 1000 }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Vendor || []);
@@ -455,16 +458,16 @@ app.get('/api/vendors', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/vendors', async (req, res) => {
+api.post('/vendors', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.createVendor(req.body, cb(res));
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/bills', async (req, res) => {
+api.get('/bills', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findBills({ limit: 1000, desc: 'MetaData.CreateTime' }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Bill || []);
@@ -472,16 +475,16 @@ app.get('/api/bills', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/bills/:id', async (req, res) => {
+api.get('/bills/:id', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.getBill(req.params.id, cb(res));
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/bills', async (req, res) => {
+api.post('/bills', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     const { vendorId, amount, txnDate, dueDate, memo, accountId } = req.body;
     const bill = {
       VendorRef: { value: vendorId },
@@ -501,9 +504,9 @@ app.post('/api/bills', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/bills/:id/attach', upload.single('file'), async (req, res) => {
+api.post('/bills/:id/attach', upload.single('file'), async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const { Readable } = require('stream');
     const stream = Readable.from(req.file.buffer);
@@ -518,9 +521,9 @@ app.post('/api/bills/:id/attach', upload.single('file'), async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.post('/api/receipts/upload', upload.single('file'), async (req, res) => {
+api.post('/receipts/upload', upload.single('file'), async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const { vendorId, amount, txnDate, dueDate, memo, accountId } = req.body;
     const bill = {
@@ -555,9 +558,9 @@ app.post('/api/receipts/upload', upload.single('file'), async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/accounts', async (req, res) => {
+api.get('/accounts', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     qbo.findAccounts({ AccountType: 'Expense', limit: 1000 }, (err, data) => {
       if (err) return cb(res)(err);
       res.json(data.QueryResponse.Account || []);
@@ -565,9 +568,9 @@ app.get('/api/accounts', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/reports/:name', async (req, res) => {
+api.get('/reports/:name', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     const reportMap = {
       ProfitAndLoss: 'reportProfitAndLoss',
       BalanceSheet: 'reportBalanceSheet',
@@ -585,9 +588,9 @@ app.get('/api/reports/:name', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
-app.get('/api/dashboard', async (req, res) => {
+api.get('/dashboard', async (req, res) => {
   try {
-    const qbo = await getQbo();
+    const qbo = await getQbo(req.userId);
     const fetchInvoices = new Promise((resolve) =>
       qbo.findInvoices({ limit: 1000 }, (err, data) => resolve(err ? [] : data.QueryResponse.Invoice || []))
     );
@@ -628,6 +631,8 @@ app.get('/api/dashboard', async (req, res) => {
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
+app.use('/api', api);
+
 app.get('/*splat', (req, res) => {
   const indexPath = path.join(CLIENT_DIST, 'index.html');
   if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
@@ -637,5 +642,4 @@ app.get('/*splat', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Visit http://localhost:${PORT}/connect to connect QuickBooks`);
 });

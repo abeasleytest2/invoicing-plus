@@ -7,7 +7,7 @@ import { Refresh } from '@design-systems/icons'
 import { PageHeader } from '../components/PageHeader'
 import { Card, CardHeader, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { api, type SyncMeta } from '../api'
+import { useApi, type SyncMeta } from '../api'
 
 function formatRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -21,6 +21,7 @@ function formatRelative(iso: string): string {
 }
 
 export default function Settings() {
+  const api = useApi()
   const [status, setStatus] = useState<any>(null)
   const [company, setCompany] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -82,7 +83,7 @@ export default function Settings() {
           ) : (
             <div>
               <B2 as="p" style={{ marginBottom: 12 }}>You're not connected to QuickBooks.</B2>
-              <Button onClick={() => { window.location.href = '/connect' }}>Connect to QuickBooks</Button>
+              <Button onClick={async () => { const { url } = await api.connectUrl(); window.location.href = url }}>Connect to QuickBooks</Button>
             </div>
           )}
         </CardBody>

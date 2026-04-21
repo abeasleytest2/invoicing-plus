@@ -16,12 +16,13 @@ import { PageHeader } from '../components/PageHeader'
 import { Card, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { EmptyState } from '../components/EmptyState'
-import { api, formatCurrency, formatDate } from '../api'
+import { useApi, formatCurrency, formatDate } from '../api'
 
 type Line = { description: string; qty: string; amount: string; itemId?: string }
 type EstimateForm = { Id?: string; customerId: string; memo: string; lines: Line[] }
 
 export default function Estimates() {
+  const api = useApi()
   const [estimates, setEstimates] = useState<any[]>([])
   const [customers, setCustomers] = useState<any[]>([])
   const [items, setItems] = useState<any[]>([])

@@ -1,104 +1,125 @@
-const BASE = ''
+import { useAuth } from '@clerk/clerk-react'
+import { useMemo } from 'react'
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error?.message || body.error || `Request failed: ${res.status}`)
-  }
-  return res.json()
-}
+const BASE = ''
 
 export type SyncMeta = {
   syncedAt: string
   counts: { customers: number; items: number; invoices: number; estimates: number; payments: number }
 }
 
-export const api = {
-  status: () => request<{ connected: boolean; realmId: string | null; lastSync: SyncMeta | null }>('/api/status'),
-  sync: () => request<SyncMeta>('/api/sync', { method: 'POST' }),
-  disconnect: () => request<{ success: boolean }>('/api/disconnect', { method: 'POST' }),
-  company: () => request<any>('/api/company'),
-  dashboard: () => request<any>('/api/dashboard'),
+type Fetcher = (path: string, init?: RequestInit) => Promise<Response>
 
-  customers: {
-    list: () => request<any[]>('/api/customers'),
-    create: (data: any) => request<any>('/api/customers', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => request<any>(`/api/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    remove: (id: string) => request<any>(`/api/customers/${id}`, { method: 'DELETE' }),
-  },
+function buildApi(fetcher: Fetcher) {
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await fetcher(BASE + path, init)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error?.message || body.error || `Request failed: ${res.status}`)
+    }
+    return res.json()
+  }
 
-  items: {
-    list: () => request<any[]>('/api/items'),
-    create: (data: any) => request<any>('/api/items', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => request<any>(`/api/items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  },
+  return {
+    status: () => request<{ connected: boolean; realmId: string | null; lastSync: SyncMeta | null }>('/api/status'),
+    connectUrl: () => request<{ url: string }>('/api/connect-url'),
+    sync: () => request<SyncMeta>('/api/sync', { method: 'POST' }),
+    disconnect: () => request<{ success: boolean }>('/api/disconnect', { method: 'POST' }),
+    company: () => request<any>('/api/company'),
+    dashboard: () => request<any>('/api/dashboard'),
 
-  invoices: {
-    list: () => request<any[]>('/api/invoices'),
-    get: (id: string) => request<any>(`/api/invoices/${id}`),
-    create: (data: any) => request<any>('/api/invoices', { method: 'POST', body: JSON.stringify(data) }),
-    remove: (id: string) => request<any>(`/api/invoices/${id}`, { method: 'DELETE' }),
-    send: (id: string, email: string) => request<any>(`/api/invoices/${id}/send`, { method: 'POST', body: JSON.stringify({ email }) }),
-    pdfUrl: (id: string) => `/api/invoices/${id}/pdf`,
-  },
+    customers: {
+      list: () => request<any[]>('/api/customers'),
+      create: (data: any) => request<any>('/api/customers', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: string, data: any) => request<any>(`/api/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      remove: (id: string) => request<any>(`/api/customers/${id}`, { method: 'DELETE' }),
+    },
 
-  estimates: {
-    list: () => request<any[]>('/api/estimates'),
-    create: (data: any) => request<any>('/api/estimates', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => request<any>(`/api/estimates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  },
+    items: {
+      list: () => request<any[]>('/api/items'),
+      create: (data: any) => request<any>('/api/items', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: string, data: any) => request<any>(`/api/items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    },
 
-  payments: {
-    list: () => request<any[]>('/api/payments'),
-    create: (data: any) => request<any>('/api/payments', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => request<any>(`/api/payments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  },
+    invoices: {
+      list: () => request<any[]>('/api/invoices'),
+      get: (id: string) => request<any>(`/api/invoices/${id}`),
+      create: (data: any) => request<any>('/api/invoices', { method: 'POST', body: JSON.stringify(data) }),
+      remove: (id: string) => request<any>(`/api/invoices/${id}`, { method: 'DELETE' }),
+      send: (id: string, email: string) => request<any>(`/api/invoices/${id}/send`, { method: 'POST', body: JSON.stringify({ email }) }),
+      pdfUrl: (id: string) => `/api/invoices/${id}/pdf`,
+    },
 
-  vendors: {
-    list: () => request<any[]>('/api/vendors'),
-    create: (data: any) => request<any>('/api/vendors', { method: 'POST', body: JSON.stringify(data) }),
-  },
+    estimates: {
+      list: () => request<any[]>('/api/estimates'),
+      create: (data: any) => request<any>('/api/estimates', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: string, data: any) => request<any>(`/api/estimates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    },
 
-  accounts: {
-    list: () => request<any[]>('/api/accounts'),
-  },
+    payments: {
+      list: () => request<any[]>('/api/payments'),
+      create: (data: any) => request<any>('/api/payments', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: string, data: any) => request<any>(`/api/payments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    },
 
-  bills: {
-    list: () => request<any[]>('/api/bills'),
-    get: (id: string) => request<any>(`/api/bills/${id}`),
-    create: (data: any) => request<any>('/api/bills', { method: 'POST', body: JSON.stringify(data) }),
-    attach: (id: string, file: File) => {
-      const fd = new FormData()
-      fd.append('file', file)
-      return fetch(`/api/bills/${id}/attach`, { method: 'POST', body: fd }).then(async r => {
+    vendors: {
+      list: () => request<any[]>('/api/vendors'),
+      create: (data: any) => request<any>('/api/vendors', { method: 'POST', body: JSON.stringify(data) }),
+    },
+
+    accounts: {
+      list: () => request<any[]>('/api/accounts'),
+    },
+
+    bills: {
+      list: () => request<any[]>('/api/bills'),
+      get: (id: string) => request<any>(`/api/bills/${id}`),
+      create: (data: any) => request<any>('/api/bills', { method: 'POST', body: JSON.stringify(data) }),
+      attach: async (id: string, file: File) => {
+        const fd = new FormData()
+        fd.append('file', file)
+        const r = await fetcher(`/api/bills/${id}/attach`, { method: 'POST', body: fd })
         if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error?.message || b.error || `Upload failed`) }
         return r.json()
-      })
+      },
     },
-  },
 
-  receipts: {
-    upload: (file: File, fields: Record<string, string>) => {
-      const fd = new FormData()
-      fd.append('file', file)
-      for (const [k, v] of Object.entries(fields)) fd.append(k, v)
-      return fetch('/api/receipts/upload', { method: 'POST', body: fd }).then(async r => {
+    receipts: {
+      upload: async (file: File, fields: Record<string, string>) => {
+        const fd = new FormData()
+        fd.append('file', file)
+        for (const [k, v] of Object.entries(fields)) fd.append(k, v)
+        const r = await fetcher('/api/receipts/upload', { method: 'POST', body: fd })
         if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error?.message || b.error || `Upload failed`) }
         return r.json()
-      })
+      },
     },
-  },
 
-  reports: {
-    get: (name: string, params?: Record<string, string>) => {
-      const q = params ? '?' + new URLSearchParams(params).toString() : ''
-      return request<any>(`/api/reports/${name}${q}`)
+    reports: {
+      get: (name: string, params?: Record<string, string>) => {
+        const q = params ? '?' + new URLSearchParams(params).toString() : ''
+        return request<any>(`/api/reports/${name}${q}`)
+      },
     },
-  },
+  }
+}
+
+export function useApi() {
+  const { getToken } = useAuth()
+
+  return useMemo(() => {
+    const fetcher: Fetcher = async (path, init = {}) => {
+      const token = await getToken()
+      const headers = new Headers(init.headers)
+      if (token) headers.set('Authorization', `Bearer ${token}`)
+      const isFormData = init.body instanceof FormData
+      if (!isFormData && init.body && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json')
+      }
+      return fetch(path, { ...init, headers })
+    }
+    return buildApi(fetcher)
+  }, [getToken])
 }
 
 export function formatCurrency(n: number | string | undefined): string {

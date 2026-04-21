@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { UserButton } from '@clerk/clerk-react'
 import Button from '@ids-ts/button'
 import Badge from '@ids-ts/badge'
 import { H3, B2, B3, Demi } from '@ids-ts/typography'
@@ -7,7 +8,7 @@ import {
   Home, Currency, Person, BoxPlus, Cash, ChartBar,
   NotePlus, Receipt, Settings as SettingsIcon,
 } from '@design-systems/icons'
-import { api } from './api'
+import { useApi } from './api'
 import './Layout.css'
 
 type NavItem = { to: string; label: string; Icon: any }
@@ -25,6 +26,7 @@ const navItems: NavItem[] = [
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {
+  const api = useApi()
   const [connected, setConnected] = useState<boolean | null>(null)
   const [realmId, setRealmId] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -40,6 +42,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     await api.disconnect()
     setConnected(false)
     navigate('/')
+  }
+
+  async function connect() {
+    const { url } = await api.connectUrl()
+    window.location.href = url
   }
 
   return (
@@ -72,9 +79,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 <Badge status="error" label="Not connected" />
-                <Button size="small" onClick={() => { window.location.href = '/connect' }}>Connect to QuickBooks</Button>
+                <Button size="small" onClick={connect}>Connect to QuickBooks</Button>
               </>
             )}
+            <UserButton afterSignOutUrl="/" />
           </div>
         </header>
         <main className="content">{children}</main>

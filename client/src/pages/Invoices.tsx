@@ -15,9 +15,10 @@ import { Card, CardBody } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { LoadingState } from '../components/LoadingState'
 import { DataTable, type Column } from '../components/DataTable'
-import { api, formatCurrency, formatDate, invoiceStatus } from '../api'
+import { useApi, formatCurrency, formatDate, invoiceStatus } from '../api'
 
 export default function Invoices() {
+  const api = useApi()
   const [invoices, setInvoices] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'all' | 'unpaid' | 'overdue' | 'paid'>('all')

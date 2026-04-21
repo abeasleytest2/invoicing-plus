@@ -13,11 +13,12 @@ import { PageHeader } from '../components/PageHeader'
 import { Card, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { EmptyState } from '../components/EmptyState'
-import { api, formatCurrency, formatDate } from '../api'
+import { useApi, formatCurrency, formatDate } from '../api'
 
 type PaymentForm = { Id?: string; customerId: string; amount: string; invoiceId: string }
 
 export default function Payments() {
+  const api = useApi()
   const [payments, setPayments] = useState<any[]>([])
   const [customers, setCustomers] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])

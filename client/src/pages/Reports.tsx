@@ -7,7 +7,7 @@ import '@ids-ts/page-message/dist/main.css'
 import { PageHeader } from '../components/PageHeader'
 import { Card, CardHeader, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { api } from '../api'
+import { useApi } from '../api'
 
 const reportOptions = [
   { value: 'ProfitAndLoss', label: 'Profit & Loss' },
@@ -22,6 +22,7 @@ const reportOptions = [
 ]
 
 export default function Reports() {
+  const api = useApi()
   const [selected, setSelected] = useState('ProfitAndLoss')
   const [report, setReport] = useState<any>(null)
   const [loading, setLoading] = useState(true)

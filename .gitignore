@@ -1,8 +1,11 @@
 node_modules/
 .env
+client/.env
 tokens.json
 .DS_Store
 *.log
 
 client/node_modules/
 client/dist/
+
+/generated/prisma

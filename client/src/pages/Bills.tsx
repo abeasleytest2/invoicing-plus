@@ -10,7 +10,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Card, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { DataTable, type Column } from '../components/DataTable'
-import { api, formatCurrency, formatDate } from '../api'
+import { useApi, formatCurrency, formatDate } from '../api'
 
 function billStatus(b: any): 'paid' | 'overdue' | 'unpaid' {
   const balance = parseFloat(b.Balance) || 0
@@ -20,6 +20,7 @@ function billStatus(b: any): 'paid' | 'overdue' | 'unpaid' {
 }
 
 export default function Bills() {
+  const api = useApi()
   const [bills, setBills] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

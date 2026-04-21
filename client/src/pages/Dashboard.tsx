@@ -12,9 +12,10 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Card, CardHeader, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { EmptyState } from '../components/EmptyState'
-import { api, formatCurrency, formatDate, invoiceStatus } from '../api'
+import { useApi, formatCurrency, formatDate, invoiceStatus } from '../api'
 
 export default function Dashboard() {
+  const api = useApi()
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -32,7 +33,7 @@ export default function Dashboard() {
       <>
         <PageHeader title="Dashboard" />
         <PageMessage type="error" title="Couldn't load dashboard" dismissible={false}>
-          {error}. You might need to <a href="/connect">connect QuickBooks</a> first.
+          {error}. You might need to connect QuickBooks first — go to Settings.
         </PageMessage>
       </>
     )

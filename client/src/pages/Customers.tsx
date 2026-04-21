@@ -10,11 +10,12 @@ import { PageHeader } from '../components/PageHeader'
 import { Card, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { DataTable, type Column } from '../components/DataTable'
-import { api, formatCurrency } from '../api'
+import { useApi, formatCurrency } from '../api'
 
 type CustomerForm = { Id?: string; DisplayName: string; email: string; phone: string }
 
 export default function Customers() {
+  const api = useApi()
   const [customers, setCustomers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
