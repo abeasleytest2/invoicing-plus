@@ -14,11 +14,12 @@ import { PageHeader } from '../components/PageHeader'
 import { Card, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { EmptyState } from '../components/EmptyState'
-import { api, formatCurrency } from '../api'
+import { useApi, formatCurrency } from '../api'
 
 type ItemForm = { Id?: string; Name: string; Type: string; UnitPrice: string }
 
 export default function Items() {
+  const api = useApi()
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<ItemForm | null>(null)

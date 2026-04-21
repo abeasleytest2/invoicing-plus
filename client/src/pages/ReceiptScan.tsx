@@ -12,10 +12,11 @@ import { Camera, Currency, Plus } from '@design-systems/icons'
 import { PageHeader } from '../components/PageHeader'
 import { Card, CardHeader, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { api } from '../api'
+import { useApi } from '../api'
 import './ReceiptScan.css'
 
 export default function ReceiptScan() {
+  const api = useApi()
   const [vendors, setVendors] = useState<any[]>([])
   const [accounts, setAccounts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)

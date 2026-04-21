@@ -13,11 +13,12 @@ import { Plus, Delete, Currency } from '@design-systems/icons'
 import { PageHeader } from '../components/PageHeader'
 import { Card, CardHeader, CardBody } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { api, formatCurrency } from '../api'
+import { useApi, formatCurrency } from '../api'
 
 type Line = { description: string; qty: string; amount: string; itemId?: string }
 
 export default function InvoiceCreate() {
+  const api = useApi()
   const [customers, setCustomers] = useState<any[]>([])
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)

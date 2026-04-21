@@ -12,9 +12,10 @@ import { PageHeader } from '../components/PageHeader'
 import { Card, CardHeader, CardBody } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { LoadingState } from '../components/LoadingState'
-import { api, formatCurrency, formatDate, invoiceStatus } from '../api'
+import { useApi, formatCurrency, formatDate, invoiceStatus } from '../api'
 
 export default function InvoiceDetail() {
+  const api = useApi()
   const { id } = useParams()
   const navigate = useNavigate()
   const [inv, setInv] = useState<any>(null)

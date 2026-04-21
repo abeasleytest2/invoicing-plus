@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci --omit=dev
-    startCommand: node server.js
+    startCommand: npx prisma migrate deploy && node server.js
     envVars:
       - key: QB_CLIENT_ID
         sync: false
@@ -13,4 +13,10 @@ services:
       - key: QB_ENVIRONMENT
         value: sandbox
       - key: QB_REDIRECT_URI
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
         sync: false
