@@ -3,8 +3,8 @@ services:
     name: invoicing-plus
     runtime: node
     plan: free
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
     envVars:
       - key: QB_CLIENT_ID
         sync: false
