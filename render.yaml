@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: invoicing-plus
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: QB_CLIENT_ID
+        sync: false
+      - key: QB_CLIENT_SECRET
+        sync: false
+      - key: QB_ENVIRONMENT
+        value: sandbox
+      - key: QB_REDIRECT_URI
+        sync: false

@@ -1,0 +1,29 @@
+.ip-stat {
+  background: var(--color-container-background-primary, #ffffff);
+  border: 1px solid var(--color-container-border-primary, #e5e5e5);
+  border-radius: var(--radius-medium, 8px);
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 4px solid var(--color-action-standard, #2ca01c);
+}
+
+.ip-stat-success { border-top-color: var(--color-message-success-primary, #2ca01c); }
+.ip-stat-error   { border-top-color: var(--color-message-error-primary, #d32f2f); }
+.ip-stat-warning { border-top-color: var(--color-message-warning-primary, #e69100); }
+
+.ip-stat-label {
+  color: var(--color-text-secondary, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ip-stat-value {
+  color: var(--color-text-primary, #1a1a1a);
+  line-height: 1.1;
+}
+
+.ip-stat-sub {
+  color: var(--color-text-secondary, #6b7280);
+}

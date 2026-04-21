@@ -1,0 +1,98 @@
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--color-container-background-primary, #ffffff);
+  border-right: 1px solid var(--color-container-border-primary, #e5e5e5);
+  padding: var(--space-component-inline-padding-medium, 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px 16px;
+  border-bottom: 1px solid var(--color-container-border-primary, #e5e5e5);
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-medium, 8px);
+  background: var(--color-action-standard);
+  color: var(--color-text-inverse, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-medium, 8px);
+  color: var(--color-text-primary, #1a1a1a);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+
+.nav-item:hover {
+  background: var(--color-action-standard-subtle-hover, rgba(0, 119, 197, 0.08));
+}
+
+.nav-item.active {
+  background: var(--color-action-standard-subtle-hover, rgba(0, 119, 197, 0.1));
+  color: var(--color-action-standard);
+  font-weight: 600;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar {
+  background: var(--color-container-background-primary, #ffffff);
+  border-bottom: 1px solid var(--color-container-border-primary, #e5e5e5);
+  padding: 12px 32px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.content {
+  padding: 32px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}

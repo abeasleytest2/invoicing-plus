@@ -1,0 +1,20 @@
+.ip-card {
+  background: var(--color-container-background-primary, #ffffff);
+  border: 1px solid var(--color-container-border-primary, #e5e5e5);
+  border-radius: var(--radius-medium, 8px);
+  overflow: hidden;
+}
+
+.ip-card-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--color-container-border-primary, #e5e5e5);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ip-card-body {
+  padding: 20px 24px;
+}

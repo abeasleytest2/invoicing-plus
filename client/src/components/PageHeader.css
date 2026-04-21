@@ -1,0 +1,19 @@
+.ip-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.ip-page-subtitle {
+  color: var(--color-text-secondary, #6b7280);
+  margin-top: 4px;
+}
+
+.ip-page-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
